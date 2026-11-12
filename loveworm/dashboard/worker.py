@@ -1086,6 +1086,7 @@ class Bot:
     def _draft(self, match_id):
         name, gender, bio, msgs, _, key = self._snapshot(match_id)
         cita = citas.leer(self.cache.get(match_id, {}))
+        hilos = list((self.cache.get(match_id, {}).get("analysis") or {}).get("hilos") or [])
         guia = self._guia()
         with self.lock:
             ejemplos = estilo.ejemplos(self.cache, excluir=match_id, consulta=estilo.consulta_de(msgs))
@@ -1096,7 +1097,7 @@ class Bot:
         text = self._call_llm(match_id, "draft", lambda: draft_message(
             name, gender, bio, msgs, self.settings["instructions"], model=self._motor("borrador"), cita=cita,
             estilo_opts=self.settings.get("estilo"), ejemplos=ejemplos, perfil=perfil,
-            agenda=self.settings.get("agenda")))
+            agenda=self.settings.get("agenda"), hilos=hilos))
         if text:
             with self.lock:
                 entry = self.cache[match_id]

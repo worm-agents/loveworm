@@ -744,6 +744,7 @@ function personCard(p) {
   if (a) {
     about = [el("div", {class: "txt"}, a.perfil || p.bio || ""),
              el("div", {class: "txt"}, el("b", {}, "En el chat: "), a.charla)];
+    if (a.hilos && a.hilos.length) about.push(el("div", {class: "txt"}, el("b", {}, "Para retomar: "), a.hilos.join(" · ")));
   } else if (p.analysis_status === "error") {
     about = [el("div", {class: "pending"}, "No se pudo analizar: " + (p.analysis_error || ""))];
   } else if (p.analysis_status === "analizando") {
