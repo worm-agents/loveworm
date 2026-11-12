@@ -134,13 +134,13 @@ def bloque_prompt(cita):
     if estado == "sin_proponer":
         return "ESTADO DE LA CITA: todavía nadie propuso salir."
     if estado == "propuesta":
-        return ("ESTADO DE LA CITA: vos ya propusiste salir y ella todavía no cerró. "
+        return ("ESTADO DE LA CITA: vos ya propusiste salir y la otra persona todavía no cerró. "
                 "No vuelvas a proponer en este mensaje, seguí la charla.\n"
                 f"Lo que quedó sobre la mesa: {resumen(cita)}")
     if estado == "contrapropuesta":
-        return ("ESTADO DE LA CITA: ella contrapropuso otro día o momento. "
-                "Cerrá con lo que ella propuso, no insistas con tu propuesta anterior.\n"
-                f"Lo que ella propuso: {resumen(cita)}")
+        return ("ESTADO DE LA CITA: la otra persona contrapropuso otro día o momento. "
+                "Cerrá con lo que propuso, no insistas con tu propuesta anterior.\n"
+                f"Lo que propuso: {resumen(cita)}")
     if estado == "confirmada":
         return ("ESTADO DE LA CITA: el plan ya está cerrado. No propongas nada más, "
                 "solo mantené la charla y confirmá si hace falta.\n"

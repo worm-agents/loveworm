@@ -84,6 +84,10 @@ class TinderApi:
         hasta = likes.get("rate_limited_until")
         return likes.get("likes_remaining"), (hasta / 1000 if hasta else None)
 
+    def mi_perfil(self):
+        """Tu propio perfil tal como lo ven los demás: nombre, nacimiento, bio, fotos, trabajo, intereses..."""
+        return self._request("GET", "/v2/profile?include=user&locale=es")["data"].get("user") or {}
+
     def send_message(self, match_id, text, estilo_opts=None):
         message = estilo.normalizar(text, estilo_opts)
         return self._request("POST", f"/user/matches/{match_id}", {"message": message})

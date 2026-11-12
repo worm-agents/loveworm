@@ -42,6 +42,8 @@ Instagram está en pausa: la web ya no expone los DMs por su API y la lectura po
 ## Uso
 
 ```powershell
+git clone https://github.com/worm-agents/loveworm.git
+cd loveworm
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m loveworm.dashboard
@@ -49,6 +51,17 @@ python -m venv .venv
 
 Abrí http://127.0.0.1:5000 y tocá **Iniciar**. Si no estás logueado, iniciá sesión en el Chrome que se abre
 (Log in → Google). Después el dashboard trae tus chats y empieza a analizarlos.
+
+El Chrome del bot corre **en segundo plano**: queda fuera de la vista y nunca se pone adelante mientras usás la
+compu (solo aparece si hay que iniciar sesión). **Ver Chrome** en la barra de arriba lo muestra y lo vuelve a
+ocultar. Se puede apagar en Configuración → Arranque.
+
+Antes de prender los borradores, completá en **Configuración**:
+
+- **Sobre vos**: qué hacés, dónde vivís, qué te gusta. Claude lo usa para tener de qué hablar.
+- **Para salir**: los días en que podés tener una cita, tu zona y lugares que puede proponer. Claude solo
+  propone esos días y esos lugares.
+- **Instrucciones**: el tono y lo que querés evitar.
 
 `abrir_dashboard.ps1` levanta el servidor si no está corriendo y abre el dashboard; sirve para un acceso directo.
 

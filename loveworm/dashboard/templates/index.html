@@ -235,6 +235,7 @@
   .toast .bar { height: .55rem; margin-top: 8px; background: repeating-linear-gradient(90deg, rgba(255,165,38,.09) 0 6px, transparent 6px 8px); }
   .toast .bar div { height: 100%; width: 0; transition: width .4s; background: repeating-linear-gradient(90deg, var(--amber) 0 6px, transparent 6px 8px); }
   @media (max-width: 420px) { .toast { left: 16px; right: 16px; width: auto; } }
+.dias { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 </style>
 </head>
 <body>
@@ -252,6 +253,7 @@
     <div class="status-line" id="status-line">○ Cargando</div>
     <div class="sb-actions">
       <button class="primary" id="btn-main">▶ Iniciar</button>
+      <button id="btn-ver" title="El Chrome del bot corre fuera de la vista para no taparte lo que hacés">◱ Ver Chrome</button>
       <button id="btn-close" title="Cierra el Chrome del bot">⏏ Cerrar</button>
       <div class="seg" id="modo-seg" role="radiogroup" aria-label="Modo">
         <button data-modo="manual" title="Claude solo analiza. Vos pedís cada mensaje y lo enviás.">Manual</button>
@@ -301,10 +303,6 @@
       <div class="panel-title">[IO] Chats automatizados<span class="n" id="n-auto"></span></div>
       <div class="alist" id="list-auto"></div>
 
-      <details class="fold" id="paused-box">
-        <summary>[--] Pausados o rotados<span class="n" id="n-paused"></span></summary>
-        <div class="alist" id="list-paused"></div>
-      </details>
 
       <div class="panel-title">[TX] Últimos envíos automáticos</div>
       <div id="list-sent"></div>
@@ -379,6 +377,20 @@
             <div class="help">Claude lo usa para tener de qué hablar y para contestar cuando te preguntan por vos. Si está vacío, te dejo datos sacados de tus chats: <b>revisalos y guardá</b>. No se usa nada hasta que guardes.</div>
           </div>
           <div>
+            <label>Tu perfil de Tinder (lo que ven de vos)</label>
+            <textarea id="set-mi-perfil" rows="8" readonly placeholder="Se lee solo de Tinder en el próximo refresco de chats."></textarea>
+            <div class="help">Tu edad, bio, datos y una descripción de cada foto, así Claude entiende cuando te comentan algo del perfil. Se actualiza en cada refresco; las fotos se vuelven a mirar solo si las cambiás. <button type="button" id="btn-mi-perfil">Releer y mirar las fotos de nuevo</button></div>
+          </div>
+          <div>
+            <label>Para salir</label>
+            <div class="dias" id="ag-dias"></div>
+            <div class="help">Los días en que podés tener una cita. Claude solo propone esos días.</div>
+            <label for="ag-zona">Zona</label>
+            <input id="ag-zona" type="text" maxlength="200" placeholder="Ej: vivo en el centro, puedo moverme a cualquier barrio">
+            <label for="ag-lugares">Lugares que puede proponer (uno por línea)</label>
+            <textarea id="ag-lugares" rows="3" placeholder="Un bar tranquilo cerca de casa&#10;Una cervecería del centro"></textarea>
+          </div>
+          <div>
             <label>Cómo escribís (aprendido de tus chats)</label>
             <textarea id="set-guia" rows="7" readonly placeholder="Todavía no se armó: se genera sola con el primer borrador."></textarea>
             <div class="help">Entra en cada borrador junto con ejemplos parecidos a la charla. <button type="button" id="btn-guia">Rehacerla</button></div>
@@ -445,6 +457,8 @@
             <label>Arranque</label>
             <label class="check"><input type="checkbox" id="env-abrir"><span>Abrir Chrome solo al iniciar el dashboard</span></label>
             <div class="help">Así los swipes diarios y el piloto corren sin tocar nada, apenas se levanta el dashboard.</div>
+            <label class="check"><input type="checkbox" id="env-oculto"><span>Chrome del bot en segundo plano</span></label>
+            <div class="help">Corre fuera de la vista y no se pone adelante mientras usás la compu. Solo aparece si hay que iniciar sesión. Para verlo, <b>Ver Chrome</b> arriba. Se aplica la próxima vez que se abre.</div>
           </div>
         </section>
 
@@ -527,6 +541,13 @@ function ago(iso) {
   if (dias < 365) return `hace ${Math.round(dias / 30)} meses`;
   const anios = Math.round(dias / 365);
   return `hace ${anios} año${anios > 1 ? "s" : ""}`;
+}
+// "sáb 7/11 22:36": fecha del último mensaje, para ver de un vistazo quién dejó de contestar
+function fechaCorta(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const dia = d.toLocaleDateString("es-AR", {weekday: "short"}).replace(".", "");
+  return `${dia} ${d.getDate()}/${d.getMonth() + 1} ${d.toLocaleTimeString("es-AR", {hour: "2-digit", minute: "2-digit"})}`;
 }
 const hhmm = (epoch) => new Date(epoch * 1000).toLocaleTimeString("es-AR", {hour: "2-digit", minute: "2-digit"});
 
@@ -657,11 +678,11 @@ function cupoTag(p) {
 
 function cupoButton(p) {
   if (p.cupo === "activa") {
-    return el("button", {title: "Saca este chat de la automatización. Podés reactivarlo cuando quieras.",
-                         onclick: () => post(cupoUrl(p.id, "soltar"))}, "Pausar");
+    return el("button", {title: "El bot deja de escribirle. Podés volver a automatizarlo cuando quieras.",
+                         onclick: () => post(cupoUrl(p.id, "soltar"))}, "Dejar de automatizar");
   }
-  return el("button", {title: "Suma este chat a los automatizados: el bot lo atiende según el modo elegido y no lo rota por inactividad.",
-                       onclick: () => post(cupoUrl(p.id, "fijar"))}, p.cupo === "rotada" ? "Reactivar" : "Automatizar");
+  return el("button", {title: "Suma este chat a los automatizados: el bot lo atiende según el modo elegido.",
+                       onclick: () => post(cupoUrl(p.id, "activar"))}, p.cupo === "rotada" ? "Volver a automatizar" : "Automatizar");
 }
 
 function citaText(c) {
@@ -679,7 +700,11 @@ function fase(p, s) {
   if (p.draft) return willSend(p, s) ? [salidaTexto(p, s), "on"] : ["Borrador esperando tu aprobación", "warn"];
   if (p.draft_error) return ["No se pudo escribir: " + p.draft_error, "warn"];
   if (p.analysis_status === "pendiente" || p.analysis_status === "analizando") return ["Claude la está analizando", "busy"];
-  if (p.esperando || p.last_from_me === true) return ["Esperando que conteste", ""];
+  if (p.esperando || p.last_from_me === true) {
+    // más de 2 días sin respuesta: probablemente ya no contesta
+    const viejo = p.last_sent && Date.now() - new Date(p.last_sent) > 2 * 86400000;
+    return [p.last_sent ? `Esperando que conteste · ${ago(p.last_sent)}` : "Esperando que conteste", viejo ? "warn" : ""];
+  }
   if (!s.auto_drafts) return ["Te toca a vos (modo manual)", "warn"];
   return ["Sin borrador todavía: tocá «Sugerir ahora»", "warn"];
 }
@@ -696,9 +721,9 @@ function personRow(p, s, extra = {}) {
     el("div", {},
       el("div", {class: "top"},
         el("span", {class: "name"}, title(p)),
-        score != null ? el("span", {class: "mini " + tierOf(score), title: "Interés 0–100"}, String(score)) : null,
-        extra.fijada ? el("span", {class: "tag", title: "No rota aunque deje de responder"}, "Fijado") : null),
-      p.last_text ? el("div", {class: "snippet"}, (p.last_from_me ? "Vos: " : "Ella: ") + snip(p.last_text)) : null,
+        score != null ? el("span", {class: "mini " + tierOf(score), title: "Interés 0–100"}, String(score)) : null),
+      p.last_text ? el("div", {class: "snippet"}, (p.last_from_me ? "Vos: " : `${p.name}: `) + snip(p.last_text)
+        + (p.last_sent ? ` · ${fechaCorta(p.last_sent)}` : "")) : null,
       el("div", {class: "phase"},
         el("span", {class: "tag " + tono}, texto),
         cita ? el("span", {class: "tag on"}, cita) : null),
@@ -706,8 +731,6 @@ function personRow(p, s, extra = {}) {
       el("div", {class: "actions"},
         p.message_count ? el("button", {onclick: () => openChat(p)}, "Ver chat") : null,
         !p.draft && !p.draft_pending ? el("button", {onclick: () => post(`/api/drafts/${p.id}/generate`)}, "Sugerir ahora") : null,
-        extra.fijada != null ? el("button", {title: extra.fijada ? "Vuelve a rotar si deja de responder" : "No rota aunque deje de responder",
-          onclick: () => post(cupoUrl(p.id, extra.fijada ? "desfijar" : "fijar"))}, extra.fijada ? "Quitar fijado" : "Fijar") : null,
         cupoButton(p),
         openInTinder(p.id))));
 }
@@ -769,17 +792,14 @@ function renderGallery(view, list, card, emptyText) {
 // --- pestaña Piloto ---
 
 const cupoTexto = (c) => c.usados > c.cupo ? String(c.usados) : `${c.usados}/${c.cupo}`;
-const cupoDetalle = (c) => c.fijadas
-  ? `chats automatizados · ${c.fijadas} fijado${c.fijadas > 1 ? "s" : ""} · cupo ${c.cupo}`
-  : "chats automatizados";
 
 function renderAuto(s) {
   const byId = new Map([...s.people, ...s.new].map(p => [p.id, p]));
   const c = s.cupos;
 
   $("auto-summary").replaceChildren(
-    el("div", {class: "stat", title: "Los fijados no rotan aunque dejen de responder y ocupan lugar del cupo"},
-      el("b", {}, cupoTexto(c)), el("span", {}, cupoDetalle(c))),
+    el("div", {class: "stat", title: "Si le escribiste y no contesta en 7 días, sale sola de la lista"},
+      el("b", {}, cupoTexto(c)), el("span", {}, "chats automatizados")),
     el("div", {class: "stat"}, el("b", {}, `${s.envios_hoy}/${s.envios_tope}`), el("span", {}, "envíos automáticos hoy")),
     el("div", {class: "stat"}, el("b", {}, `${s.envio.envio_desde}–${s.envio.envio_hasta} h`),
       el("span", {}, s.en_horario ? "horario de envío · abierto" : "horario de envío · cerrado")));
@@ -796,25 +816,10 @@ function renderAuto(s) {
   const detalle = [...c.detalle].sort((a, b) => ultimo(b).localeCompare(ultimo(a)));
   $("list-auto").replaceChildren(...(detalle.length
     ? detalle.map(d => personRow(byId.get(d.id) || {id: d.id, name: d.nombre, cupo: "activa"}, s,
-        {score: d.score, fijada: d.fijada, sinBorrador: enBandeja.has(d.id)}))
+        {score: d.score, sinBorrador: enBandeja.has(d.id)}))
     : [el("div", {class: "empty"},
         "Todavía no hay chats automatizados. Entran solos al actualizar los chats (los de más interés primero) " +
         "o los sumás vos con «Automatizar» en la galería")]));
-
-  $("paused-box").hidden = !c.pausadas.length;
-  $("n-paused").textContent = c.pausadas.length ? ` · ${c.pausadas.length}` : "";
-  $("list-paused").replaceChildren(...c.pausadas.map(d => {
-    const p = byId.get(d.id) || {id: d.id, name: d.nombre};
-    return el("article", {class: "arow"},
-      el("div", {class: "thumb"}, (d.nombre || "?")[0]),
-      el("div", {},
-        el("div", {class: "top"}, el("span", {class: "name"}, d.nombre),
-          el("span", {class: "tag warn"}, d.motivo || "pausado"), el("span", {class: "muted"}, ago(d.fecha))),
-        el("div", {class: "actions"},
-          el("button", {title: "Vuelve a los chats automatizados y no rota por inactividad", onclick: () => post(cupoUrl(d.id, "fijar"))}, "Reactivar"),
-          p.message_count ? el("button", {onclick: () => openChat(p)}, "Ver chat") : null,
-          openInTinder(d.id))));
-  }));
 
   $("list-sent").replaceChildren(...(s.envios_ultimos.length
     ? s.envios_ultimos.map(e => el("div", {class: "sent"},
@@ -939,6 +944,10 @@ function render(s) {
     main.disabled = ["abriendo navegador", "esperando login", "actualizando chats"].includes(s.status);
   }
   $("btn-close").hidden = !on;
+  const ver = $("btn-ver");
+  ver.hidden = !on || ["abriendo navegador", "esperando login"].includes(s.status);
+  ver.textContent = s.chrome_visible ? "◲ Ocultar Chrome" : "◱ Ver Chrome";
+  ver.onclick = () => post(s.chrome_visible ? "/api/chrome/ocultar" : "/api/chrome/mostrar");
   document.querySelectorAll("#modo-seg button").forEach(b => b.classList.toggle("on", b.dataset.modo === modo));
 
   $("ig-panel").hidden = !s.instagram_enabled;
@@ -1013,6 +1022,8 @@ $("set-model").onchange = mostrarApi;
 $("set-model-borrador").onchange = mostrarApi;
 let fisicoCfg = null;
 
+const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
 async function loadSettings() {
   configCargada = true;
   const s = await (await fetch("/api/settings")).json();
@@ -1031,6 +1042,11 @@ async function loadSettings() {
   $("env-desde").value = s.envio_desde; $("env-hasta").value = s.envio_hasta;
   $("env-dmin").value = s.demora_min; $("env-dmax").value = s.demora_max;
   $("env-abrir").checked = !!s.abrir_al_iniciar;
+  $("env-oculto").checked = s.chrome_oculto !== false;
+  $("ag-dias").replaceChildren(...DIAS_SEMANA.map((d, i) => el("label", {class: "check"},
+    el("input", {type: "checkbox", "data-dia": i, ...(s.agenda.dias.includes(i) ? {checked: ""} : {})}), el("span", {}, d))));
+  $("ag-zona").value = s.agenda.zona || "";
+  $("ag-lugares").value = (s.agenda.lugares || []).join("\n");
   $("set-estilo").replaceChildren(...Object.entries(s.estilo_reglas).map(([name, desc]) =>
     el("label", {class: "check"},
       el("input", {type: "checkbox", "data-regla": name, ...(s.estilo[name] ? {checked: ""} : {})}),
@@ -1038,6 +1054,8 @@ async function loadSettings() {
   // si todavía no escribiste nada, se dejan como punto de partida los datos que Claude sacó de tus chats
   $("set-sobre").value = s.sobre_mi || (s.guia && s.guia.hechos) || "";
   $("set-guia").value = (s.guia && s.guia.estilo) || "";
+  $("set-mi-perfil").value = s.mi_perfil || "";
+  if (s.describiendo_fotos) $("set-mi-perfil").value += "\n\n(mirando tus fotos...)";
   fisicoCfg = s.fisico;
   $("fis-activo").checked = !!s.fisico.activo;
   $("fis-modo").value = s.fisico.modo;
@@ -1084,6 +1102,10 @@ $("sw-filtro-btn").onclick = () => setTab("config");
 $("btn-ig").onclick = () => post("/api/instagram/connect");
 $("chat-close").onclick = () => $("chat-dlg").close();
 $("set-cancel").onclick = () => loadSettings();
+$("btn-mi-perfil").onclick = async () => {
+  await post("/api/mi_perfil/releer");
+  $("set-mi-perfil").value += "\n\n(releyendo tu perfil y mirando las fotos: tarda un par de minutos, volvé a abrir la configuración)";
+};
 $("btn-guia").onclick = async () => {
   await post("/api/guia/regenerar");
   $("set-guia").value = "";
@@ -1096,8 +1118,11 @@ $("set-save").onclick = async () => {
     api: {url: $("api-url").value, modelo: $("api-modelo").value, key: $("api-key").value},
     max_activas: $("set-max").value, tope_diario: $("set-tope").value,
     fisico: leerFisico(), sobre_mi: $("set-sobre").value,
+    agenda: {dias: [...document.querySelectorAll("#ag-dias input:checked")].map(i => +i.dataset.dia),
+             zona: $("ag-zona").value, lugares: $("ag-lugares").value.split("\n")},
     envio: {envio_desde: $("env-desde").value, envio_hasta: $("env-hasta").value,
-            demora_min: $("env-dmin").value, demora_max: $("env-dmax").value, abrir_al_iniciar: $("env-abrir").checked ? 1 : 0}});
+            demora_min: $("env-dmin").value, demora_max: $("env-dmax").value, abrir_al_iniciar: $("env-abrir").checked ? 1 : 0,
+            chrome_oculto: $("env-oculto").checked ? 1 : 0}});
   if (ok) { $("set-save").textContent = "✓ Guardado"; setTimeout(() => $("set-save").textContent = "Guardar", 1800); }
 };
 

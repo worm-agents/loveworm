@@ -10,10 +10,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from loveworm.helpers import citas, estilo, fisico, swipes
+from loveworm.helpers import citas, estilo, fisico, mi_perfil, swipes
 from loveworm.helpers.cupos import MAX_ACTIVAS, Cupos
 from loveworm.helpers.instagram_web import InstagramWeb, extract_handles
-from loveworm.helpers.llm import LLMError, analyze_person, bloque_perfil, draft_message, generar_guia
+from loveworm.helpers.llm import (LLMError, analyze_person, ask, bloque_perfil, completar_agenda, draft_message,
+                                  generar_guia)
 from loveworm.helpers.tinder_api import TinderApi
 
 # bump when the analysis schema changes so every person gets re-analyzed
@@ -62,6 +63,10 @@ DEFAULT_SETTINGS = {
     "demora_max": 25,
     # al levantar el dashboard abre Chrome solo, así las automatizaciones corren sin tocar nada
     "abrir_al_iniciar": False,
+    # el Chrome del bot corre fuera de la vista y no se roba el foco; se muestra solo para iniciar sesión
+    "chrome_oculto": True,
+    # disponibilidad para citas: días (0 = lunes ... 6 = domingo), zona y lugares que puede proponer
+    "agenda": {"dias": [5, 6], "zona": "", "lugares": []},
 }
 MODELS = ("haiku", "sonnet", "opus", "api")
 
@@ -81,6 +86,7 @@ IG_REREAD_SECONDS = 24 * 3600
 # entre dos envíos automáticos seguidos (por ejemplo, al abrir el horario con varios en cola)
 SEPARACION_ENVIOS = (60, 240)
 LIMITES_ENVIO = {"envio_desde": (0, 23), "envio_hasta": (1, 24), "demora_min": (0, 240), "demora_max": (0, 240)}
+BANDERAS = ("abrir_al_iniciar", "chrome_oculto")
 
 
 def _error_de_sesion(msg):
@@ -143,6 +149,11 @@ class Bot:
         self._guia_cache = None
         self._guia_lock = threading.Lock()
         self._guia_fallo = 0.0
+        # tu propio perfil de Tinder (datos y fotos descritas), para que el bot sepa qué ven de vos
+        self.mi_perfil_path = self.root / "data" / "mi_perfil.json"
+        self.mi_perfil = mi_perfil.cargar(self.mi_perfil_path)
+        self._describiendo = False
+        self._describir_fallo = 0.0
         self.cache = self._load_cache()
         self.settings = self._load_settings()
         self.envios = self._load_envios()
@@ -224,16 +235,12 @@ class Bot:
                 entry["draft_dismissed"] = _draft_key(entry)
         self._save_cache()
 
-    def fijar_cupo(self, match_id):
-        """Le guarda el cupo aunque deje de responder."""
-        self.cupos.fijar(match_id)
-        self.log(f"Cupo fijado: {self.cache.get(match_id, {}).get('name', '?')}.")
+    def activar_cupo(self, match_id):
+        """La suma a los chats automatizados."""
+        self.cupos.activar(match_id)
+        self.log(f"Automatizado: {self.cache.get(match_id, {}).get('name', '?')}.")
         self._schedule_llm()
         self._enviar_borradores_pendientes()
-
-    def desfijar_cupo(self, match_id):
-        self.cupos.desfijar(match_id)
-        self.log(f"Cupo sin fijar: {self.cache.get(match_id, {}).get('name', '?')} puede rotar.")
 
     def soltar_cupo(self, match_id):
         self.cupos.soltar(match_id)
@@ -267,6 +274,8 @@ class Bot:
                     estilo_reglas=estilo.descripciones(), models=MODELS,
                     fisico=fisico.completar(self.settings.get("fisico")),
                     fisico_atributos=fisico.descripciones(), guia=self._leer_guia(),
+                    mi_perfil=mi_perfil.bloque_prompt(self.mi_perfil), describiendo_fotos=self._describiendo,
+                    agenda=completar_agenda(self.settings.get("agenda")),
                     swipes=swipes.completar(self.settings.get("swipes")))
 
     def _leer_guia(self):
@@ -317,7 +326,8 @@ class Bot:
 
     def update_settings(self, instructions=None, model=None, auto_drafts=None, auto_send=None,
                         estilo_opts=None, max_activas=None, tope_diario=None, fisico_opts=None,
-                        sobre_mi=None, swipes_opts=None, envio=None, model_borrador=None, api=None):
+                        sobre_mi=None, swipes_opts=None, envio=None, model_borrador=None, api=None,
+                        agenda=None):
         """Guarda solo lo que viene (None = se conserva), así cada control de la interfaz
         puede cambiar lo suyo sin pisar el resto."""
         for m in (model, model_borrador):
@@ -335,7 +345,7 @@ class Bot:
         for nombre, valor, minimo, maximo in (("max_activas", max_activas, 1, 20), ("tope_diario", tope_diario, 0, 200)):
             if valor is not None and not minimo <= valor <= maximo:
                 raise ValueError(f"{nombre} tiene que estar entre {minimo} y {maximo}")
-        envio = {k: int(v) for k, v in (envio or {}).items() if k in LIMITES_ENVIO or k == "abrir_al_iniciar"}
+        envio = {k: int(v) for k, v in (envio or {}).items() if k in LIMITES_ENVIO or k in BANDERAS}
         for k, (minimo, maximo) in LIMITES_ENVIO.items():
             if k in envio and not minimo <= envio[k] <= maximo:
                 raise ValueError(f"{k} tiene que estar entre {minimo} y {maximo}")
@@ -344,8 +354,9 @@ class Bot:
             raise ValueError("El horario de envío tiene que terminar después de empezar")
         if prueba["demora_min"] > prueba["demora_max"]:
             raise ValueError("La demora mínima no puede ser mayor que la máxima")
-        if "abrir_al_iniciar" in envio:
-            envio["abrir_al_iniciar"] = bool(envio["abrir_al_iniciar"])
+        for k in BANDERAS:
+            if k in envio:
+                envio[k] = bool(envio[k])
         self.settings.update(envio)
         if auto_send:
             auto_drafts = True  # el envío automático sale de un borrador
@@ -361,6 +372,7 @@ class Bot:
                   "max_activas": max_activas, "tope_diario": tope_diario,
                   "fisico": None if fisico_opts is None else fisico.completar(fisico_opts),
                   "sobre_mi": None if sobre_mi is None else sobre_mi.strip(),
+                  "agenda": None if agenda is None else completar_agenda(agenda),
                   "swipes": None if swipes_opts is None
                   else swipes.completar(dict(self.settings.get("swipes") or {}, **swipes_opts))}
         self.settings.update({k: v for k, v in nuevos.items() if v is not None})
@@ -414,7 +426,8 @@ class Bot:
             "envios_tope": self.settings["tope_diario"],
             "envios_ultimos": self.envios.get("ultimos", [])[:10],
             "swipes": self._swipes_estado(),
-            "envio": {k: self.settings[k] for k in (*LIMITES_ENVIO, "abrir_al_iniciar")},
+            "envio": {k: self.settings[k] for k in (*LIMITES_ENVIO, *BANDERAS)},
+            "chrome_visible": bool(self.session and not self.session.hidden),
             "en_horario": self._en_horario(),
             "fisico": fisico.completar(self.settings.get("fisico")),
             "people": people,
@@ -479,9 +492,22 @@ class Bot:
             browser.get("https://tinder.com/app/recs" if site == "tinder" else "https://www.instagram.com/")
             time.sleep(4)
             self.tabs[site] = browser.current_window_handle
-        else:
+        elif browser.current_window_handle != handle:
+            # switch_to.window trae Chrome al frente: solo cuando de verdad hay que cambiar de pestaña
             browser.switch_to.window(handle)
         return browser
+
+    def mostrar_chrome(self):
+        if not self._browser_alive():
+            return False
+        self.session.show_window()
+        return True
+
+    def ocultar_chrome(self):
+        if not self._browser_alive():
+            return False
+        self.session.hide_window()
+        return True
 
     def _job_start(self):
         if self._browser_alive():
@@ -491,16 +517,22 @@ class Bot:
         from loveworm.session import Session
 
         self.status = "abriendo navegador"
-        self.log("Abriendo Chrome...")
-        self.session = Session(user_data=f"{self.root}/chrome_profile/")
+        oculto = bool(self.settings.get("chrome_oculto", True))
+        self.log("Abriendo Chrome" + (" en segundo plano..." if oculto else "..."))
+        self.session = Session(user_data=f"{self.root}/chrome_profile/", hidden=oculto)
         self.tabs = {"tinder": self.session.browser.current_window_handle}
 
-        self.status = "esperando login"
-        self.log("Si no estás logueado, iniciá sesión a mano en el Chrome (Log in -> Google).")
+        if not self.session._is_logged_in():
+            # para iniciar sesión hace falta verlo
+            self.session.show_window()
+            self.status = "esperando login"
+            self.log("Iniciá sesión en Tinder en la ventana de Chrome que se abrió (Log in → Google, teléfono, etc.).")
         self.session.login_manually()
+        if oculto and not self.session.hidden:
+            self.session.hide_window()
 
         self.status = "listo"
-        self.log("Sesión iniciada.")
+        self.log("Sesión iniciada." + (" Chrome queda en segundo plano: 'Ver Chrome' lo muestra." if oculto else ""))
         self.jobs.put(("refresh", {}))
 
     def _job_swipe(self, amount, ratio, sleep, auto=False):
@@ -632,6 +664,7 @@ class Bot:
         self.status = "actualizando chats"
         api = TinderApi(self._tab("tinder"))
         try:
+            self._actualizar_mi_perfil(api)
             active_raw = api.get_matches(messaged=True)
             available_raw = api.get_matches(messaged=False)
             self.log(f"{len(active_raw)} chats activos, {len(available_raw)} matches sin chat.")
@@ -706,6 +739,55 @@ class Bot:
         self._enviar_borradores_pendientes()
         if INSTAGRAM_ENABLED and self.settings["instagram"]:
             self.jobs.put(("refresh_instagram", {}))
+
+    def _job_mi_perfil(self):
+        """Releer tu perfil y volver a describir todas las fotos (botón de la configuración)."""
+        self._require_session()
+        self._actualizar_mi_perfil(TinderApi(self._tab("tinder")), forzar=True)
+
+    def _actualizar_mi_perfil(self, api, forzar=False):
+        """Trae tu perfil (una llamada barata, va en cada refresco). Las fotos se describen solo si
+        hay alguna nueva, en segundo plano para no frenar el navegador."""
+        try:
+            nuevo = mi_perfil.datos(api.mi_perfil())
+        except Exception as e:
+            self.log(f"No se pudo leer tu perfil de Tinder: {e}")
+            return
+        with self.lock:
+            viejo = self.mi_perfil
+            previas = {} if forzar else {f["id"]: f.get("descripcion", "") for f in viejo.get("fotos") or []}
+            for f in nuevo["fotos"]:
+                f["descripcion"] = previas.get(f["id"], "")
+            nuevo["aspecto"] = "" if forzar else viejo.get("aspecto", "")
+            nuevo["fecha"] = _now_iso()
+            self.mi_perfil = nuevo
+            mi_perfil.guardar(self.mi_perfil_path, nuevo)
+            faltan = any(not f["descripcion"] for f in nuevo["fotos"])
+        if faltan and not self._describiendo and (forzar or time.time() - self._describir_fallo > 600):
+            self._describiendo = True
+            self.llm.submit(self._describir_fotos)
+
+    def _describir_fotos(self):
+        try:
+            with self.lock:
+                fotos = [dict(f) for f in self.mi_perfil.get("fotos") or []]
+            if not fotos:
+                return
+            self.log(f"Mirando tus {len(fotos)} fotos de Tinder para saber de qué te hablan...")
+            rutas = mi_perfil.bajar_fotos(fotos, self.root / "data" / "mi_perfil_fotos")
+            out = mi_perfil.describir(rutas, ask, self._motor("borrador"))
+            por_id = {f["id"]: d for f, d in zip(fotos, out["fotos"])}
+            with self.lock:
+                for f in self.mi_perfil.get("fotos") or []:
+                    f["descripcion"] = por_id.get(f["id"]) or f.get("descripcion", "")
+                self.mi_perfil["aspecto"] = out["aspecto"]
+                mi_perfil.guardar(self.mi_perfil_path, self.mi_perfil)
+            self.log("Fotos de tu perfil descritas.")
+        except Exception as e:
+            self._describir_fallo = time.time()
+            self.log(f"No se pudieron describir tus fotos: {e}")
+        finally:
+            self._describiendo = False
 
     def _marcar_unmatches(self, vigentes, completa):
         """Quien ya no aparece en Tinder deshizo el match: sale del piloto y no vuelve a entrar.
@@ -987,7 +1069,8 @@ class Bot:
         try:
             name, gender, bio, msgs, ig_msgs, key = self._snapshot(match_id)
             result = self._call_llm(match_id, "analysis", lambda: analyze_person(
-                name, gender, bio, msgs, ig_messages=ig_msgs, model=self._motor("analisis")))
+                name, gender, bio, msgs, ig_messages=ig_msgs, model=self._motor("analisis"),
+                agenda=self.settings.get("agenda")))
             if result:
                 leido = result.pop("cita", None)
                 with self.lock:
@@ -1007,10 +1090,13 @@ class Bot:
         with self.lock:
             ejemplos = estilo.ejemplos(self.cache, excluir=match_id, consulta=estilo.consulta_de(msgs))
             stats = estilo.estadisticas(self.cache)
-        perfil = bloque_perfil(dict(guia, stats=stats), self.settings.get("sobre_mi", ""))
+        with self.lock:
+            tinder = mi_perfil.bloque_prompt(self.mi_perfil)
+        perfil = bloque_perfil(dict(guia, stats=stats), self.settings.get("sobre_mi", ""), tinder)
         text = self._call_llm(match_id, "draft", lambda: draft_message(
             name, gender, bio, msgs, self.settings["instructions"], model=self._motor("borrador"), cita=cita,
-            estilo_opts=self.settings.get("estilo"), ejemplos=ejemplos, perfil=perfil))
+            estilo_opts=self.settings.get("estilo"), ejemplos=ejemplos, perfil=perfil,
+            agenda=self.settings.get("agenda")))
         if text:
             with self.lock:
                 entry = self.cache[match_id]

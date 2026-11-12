@@ -111,15 +111,9 @@ def reanalyze(match_id):
 
 # --- cupos: las 5 conversaciones en juego ---
 
-@app.post("/api/cupos/<match_id>/fijar")
-def fijar_cupo(match_id):
-    bot.fijar_cupo(match_id)
-    return jsonify(ok=True)
-
-
-@app.post("/api/cupos/<match_id>/desfijar")
-def desfijar_cupo(match_id):
-    bot.desfijar_cupo(match_id)
+@app.post("/api/cupos/<match_id>/activar")
+def activar_cupo(match_id):
+    bot.activar_cupo(match_id)
     return jsonify(ok=True)
 
 
@@ -160,15 +154,36 @@ def save_settings():
                             auto_drafts=campo("auto_drafts", bool), auto_send=campo("auto_send", bool),
                             estilo_opts=body.get("estilo"), max_activas=campo("max_activas", int),
                             tope_diario=campo("tope_diario", int), fisico_opts=body.get("fisico"),
-                            sobre_mi=campo("sobre_mi", str), envio=body.get("envio"))
+                            sobre_mi=campo("sobre_mi", str), envio=body.get("envio"),
+                            agenda=body.get("agenda"))
     except (TypeError, ValueError) as e:
         return jsonify(ok=False, error=str(e)), 400
+    return jsonify(ok=True)
+
+
+@app.post("/api/mi_perfil/releer")
+def releer_mi_perfil():
+    bot.submit("mi_perfil")
     return jsonify(ok=True)
 
 
 @app.post("/api/guia/regenerar")
 def regenerar_guia():
     bot.regenerar_guia()
+    return jsonify(ok=True)
+
+
+@app.post("/api/chrome/<accion>")
+def chrome_window(accion):
+    """Mostrar u ocultar el Chrome del bot (corre fuera de la vista para no robar el foco)."""
+    if accion not in ("mostrar", "ocultar"):
+        return jsonify(ok=False, error="Acción inválida"), 404
+    try:
+        ok = bot.mostrar_chrome() if accion == "mostrar" else bot.ocultar_chrome()
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)[:200]), 500
+    if not ok:
+        return jsonify(ok=False, error="El navegador no está abierto"), 400
     return jsonify(ok=True)
 
 

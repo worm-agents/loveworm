@@ -1,4 +1,4 @@
-﻿# Selenium: automation of browser
+# Selenium: automation of browser
 from selenium import webdriver
 # from webdriver_manager.chrome import ChromeDriverManager
 import undetected_chromedriver as uc
@@ -37,7 +37,12 @@ from loveworm.addproxy import get_proxy_extension
 class Session:
     HOME_URL = "https://www.tinder.com/app/recs"
 
-    def __init__(self, headless=False, store_session=True, proxy=None, user_data=False):
+    # fuera de la vista: Chrome sigue dibujando y respondiendo (a diferencia de minimizado, que congela
+    # las animaciones), pero no tapa lo que estés haciendo
+    OFFSCREEN = (-32000, -32000)
+
+    def __init__(self, headless=False, store_session=True, proxy=None, user_data=False, hidden=False):
+        self.hidden = hidden
         self.email = None
         self.session_data = {
             "duration": 0,
@@ -76,14 +81,14 @@ class Session:
         # Getting the chromedriver from cache or download it from internet
         print("Getting ChromeDriver ...")
         try:
-            self.browser = uc.Chrome(options=self._options(store_session, user_data, headless, proxy))
+            self.browser = uc.Chrome(options=self._options(store_session, user_data, headless, proxy, hidden))
         except SessionNotCreatedException as e:
             # uc baja el driver de la última versión de Chrome; si el instalado es otra, reintenta con esa
             m = re.search(r"Current browser version is (\d+)", str(e))
             if not m:
                 raise
             print(f"ChromeDriver no coincide, reintentando para Chrome {m.group(1)} ...")
-            self.browser = uc.Chrome(options=self._options(store_session, user_data, headless, proxy),
+            self.browser = uc.Chrome(options=self._options(store_session, user_data, headless, proxy, hidden),
                                      version_main=int(m.group(1)))
 
         # Cool banner
@@ -95,8 +100,14 @@ class Session:
 
     # uc no deja reusar unas ChromeOptions entre intentos, así que se arman de cero cada vez
     @staticmethod
-    def _options(store_session, user_data, headless, proxy):
+    def _options(store_session, user_data, headless, proxy, hidden=False):
         options = uc.ChromeOptions()
+        # que siga andando a velocidad normal aunque esté tapado o fuera de la vista
+        for flag in ("--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
+                     "--disable-background-timer-throttling"):
+            options.add_argument(flag)
+        if hidden:
+            options.add_argument("--window-position={},{}".format(*Session.OFFSCREEN))
 
         # Create empty profile to avoid annoying Mac Popup
         if store_session:
@@ -130,6 +141,18 @@ class Session:
             else:
                 options.add_argument(f'--proxy-server=http://{proxy}')
         return options
+
+    def show_window(self):
+        """Trae el Chrome del bot a la vista (por ejemplo, para iniciar sesión)."""
+        self.hidden = False
+        self.browser.set_window_rect(x=80, y=60, width=1200, height=900)
+        self.browser.switch_to.window(self.browser.current_window_handle)  # lo pasa al frente
+
+    def hide_window(self):
+        """Lo saca de la vista sin minimizarlo, así sigue swipeando y no se roba el foco."""
+        self.hidden = True
+        x, y = Session.OFFSCREEN
+        self.browser.set_window_rect(x=x, y=y, width=1200, height=900)
 
     # Setting a custom location
     def set_custom_location(self, latitude, longitude, accuracy="100%"):

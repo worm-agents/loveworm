@@ -4,8 +4,8 @@ Mantener 40 chats abiertos es imposible de revisar. Esta política elige las 5 q
 pena, deja el resto estacionadas y saca de circulación a quien no contestó en una semana para
 meter a alguien nuevo en su lugar.
 
-El estado vive en data/cupos.json. Nunca rota un chat con la cita confirmada ni uno fijado a
-mano. Si una rotada vuelve a escribir, entra de nuevo sola.
+El estado vive en data/cupos.json. Nunca rota un chat con la cita confirmada. Si una rotada vuelve
+a escribir, entra de nuevo sola.
 
 Suelto, contra el cache guardado:
     .\\.venv\\Scripts\\python.exe -m loveworm.helpers.cupos
@@ -36,7 +36,7 @@ class Cupos:
     def __init__(self, path, max_activas=MAX_ACTIVAS):
         self.path = Path(path)
         self.max_activas = max_activas
-        self.activas = {}   # match_id -> {"desde": iso, "fijada": bool}
+        self.activas = {}   # match_id -> {"desde": iso}
         self.rotadas = {}   # match_id -> {"fecha": iso, "motivo": str}
         self._cargar()
 
@@ -47,7 +47,8 @@ class Cupos:
             datos = json.loads(self.path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             return
-        self.activas = datos.get("activas") or {}
+        # "fijada" ya no existe: un chat fijado no rotaba nunca y no se entendía. Ahora todos rotan igual
+        self.activas = {mid: {"desde": a.get("desde")} for mid, a in (datos.get("activas") or {}).items()}
         self.rotadas = datos.get("rotadas") or {}
 
     def _guardar(self):
@@ -62,17 +63,11 @@ class Cupos:
             return "rotada"
         return "estacionada"
 
-    def fijar(self, match_id):
-        """La mantiene activa aunque deje de responder."""
-        self.activas[match_id] = {"desde": datetime.now(timezone.utc).isoformat(), "fijada": True}
+    def activar(self, match_id):
+        """La suma a mano. Los 7 días sin respuesta se cuentan desde ahora, así no rota en el acto."""
+        self.activas[match_id] = {"desde": datetime.now(timezone.utc).isoformat()}
         self.rotadas.pop(match_id, None)
         self._guardar()
-
-    def desfijar(self, match_id):
-        """Sigue activa, pero vuelve a rotar si deja de responder."""
-        if match_id in self.activas:
-            self.activas[match_id]["fijada"] = False
-            self._guardar()
 
     def soltar(self, match_id):
         """Le saca el cupo a mano."""
@@ -106,7 +101,7 @@ class Cupos:
         libres = self.max_activas - len(self.activas)
         if libres > 0:
             for mid in self._candidatas(cache, ahora)[:libres]:
-                self.activas[mid] = {"desde": ahora.isoformat(), "fijada": False}
+                self.activas[mid] = {"desde": ahora.isoformat()}
                 promovidas.append(mid)
 
         self._guardar()
@@ -114,15 +109,15 @@ class Cupos:
                 "estacionadas": max(0, len(cache) - len(self.activas) - len(rotadas))}
 
     def _motivo_rotacion(self, mid, entry, ahora):
-        if self.activas[mid].get("fijada"):
-            return None
         if (entry.get("cita") or {}).get("estado") == "confirmada":
             return None
 
+        # desde que entró al cupo: a una que sumaste a mano no se la rota por días de antes
+        activa_desde = _ts(self.activas[mid].get("desde"))
         mensajes = entry.get("messages") or []
         if not mensajes:
             # nunca abrimos la charla: si el match ya es viejo, no merece el cupo
-            matched = _ts(entry.get("matched"))
+            matched = max(filter(None, (_ts(entry.get("matched")), activa_desde)), default=None)
             if matched and (ahora - matched).days >= DIAS_PARA_ROTAR:
                 return "sin abrir"
             return None
@@ -132,6 +127,7 @@ class Cupos:
             return None  # escribió ella: la pelota no está de nuestro lado
 
         desde = _ts(ultimo.get("sent")) or _ts(entry.get("last_activity"))
+        desde = max(filter(None, (desde, activa_desde)), default=None)
         if desde and (ahora - desde).days >= DIAS_PARA_ROTAR:
             return f"sin respuesta hace {(ahora - desde).days} días"
         return None
@@ -177,15 +173,13 @@ class Cupos:
         for mid in self.activas:
             entry = cache.get(mid) or {}
             detalle.append({"id": mid, "nombre": entry.get("name", "?"),
-                            "score": interes.score_final(entry, ahora=ahora),
-                            "fijada": bool(self.activas[mid].get("fijada"))})
+                            "score": interes.score_final(entry, ahora=ahora)})
         detalle.sort(key=lambda d: d["score"], reverse=True)
         pausadas = [{"id": mid, "nombre": (cache.get(mid) or {}).get("name", "?"),
                      "motivo": r.get("motivo", ""), "fecha": r.get("fecha")}
                     for mid, r in self.rotadas.items()]
         pausadas.sort(key=lambda p: p["fecha"] or "", reverse=True)
         return {"cupo": self.max_activas, "usados": len(self.activas), "detalle": detalle,
-                "fijadas": sum(1 for d in detalle if d["fijada"]),
                 "rotadas": len(self.rotadas), "pausadas": pausadas[:30]}
 
 
@@ -205,8 +199,7 @@ def _main():
 
     print(f"Activas: {len(resultado['activas'])}/{MAX_ACTIVAS}\n")
     for d in cupos.resumen(cache)["detalle"]:
-        marca = " (fijada)" if d["fijada"] else ""
-        print(f"  {d['score']:>3}  {d['nombre'][:28]}{marca}")
+        print(f"  {d['score']:>3}  {d['nombre'][:28]}")
 
     if resultado["promovidas"]:
         print("\nPromovidas:")
