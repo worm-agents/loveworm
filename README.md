@@ -1,7 +1,10 @@
 # 🪱 LoveWorm
 
 Dashboard local para manejar Tinder: swipes con pausas, galería de tus matches ordenada por interés y
-borradores de mensajes escritos por Claude que solo se envían cuando vos los aprobás.
+borradores de mensajes escritos por IA que solo se envían cuando vos los aprobás.
+
+Es parte de [Worm Agents](https://worm-agents.com), una familia de agentes de IA open source. Por ahora está pensado
+para Argentina: la interfaz y los mensajes son en español rioplatense.
 
 ## Qué hace
 
@@ -27,8 +30,9 @@ Instagram está en pausa: la web ya no expone los DMs por su API y la lectura po
   vos a mano la primera vez; la contraseña nunca pasa por el código.
 - Los chats y matches se leen con la API de Tinder Web usando esa sesión del navegador, con pausas entre requests,
   y solo se vuelven a bajar los chats que cambiaron.
-- Los análisis y borradores usan el CLI de [Claude Code](https://claude.com/claude-code) (`claude -p`) con tu
-  suscripción, sin herramientas y sin guardar sesión. Reciben solo el nombre, la bio y el texto del chat.
+- Los análisis y borradores usan por defecto el CLI de [Claude Code](https://claude.com/claude-code) (`claude -p`)
+  con tu suscripción, sin herramientas y sin guardar sesión. En Configuración → Modelo podés cambiarlo por una API
+  compatible con OpenAI con tu propia key. El modelo recibe solo el nombre, la bio y el texto del chat.
 - Chats, análisis y configuración se guardan en `data/`, que no se sube al repo.
 
 > ⚠️ Automatizar Tinder va contra sus términos de uso y puede terminar en el bloqueo de la cuenta. Usalo con
@@ -84,7 +88,7 @@ loveworm/
   dashboard/       servidor Flask, worker del bot y la página (templates/index.html)
   helpers/
     tinder_api.py  lectura de chats y envío de mensajes con la sesión del navegador
-    llm.py         análisis de personas y borradores con `claude -p`
+    llm.py         análisis de personas y borradores (`claude -p` o API compatible con OpenAI)
     instagram_web.py  lector de Instagram por pantalla (en pausa)
     ...            helpers de Selenium heredados de TinderBotz (login, swipes, perfil)
   session.py       sesión de Chrome y acciones del bot
