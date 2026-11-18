@@ -37,7 +37,9 @@ Instagram está en pausa: la web ya no expone los DMs por su API y la lectura po
 ## Requisitos
 
 - Windows, Python 3.12+ y Google Chrome
-- [Claude Code](https://claude.com/claude-code) instalado y logueado (`claude` en el PATH)
+- [Claude Code](https://claude.com/claude-code) instalado y logueado con tu cuenta de Claude (`claude` en el PATH),
+  o una API compatible con OpenAI (OpenAI, OpenRouter, Gemini, Groq, DeepSeek, Ollama) que se elige en
+  Configuración → Modelo
 
 ## Uso
 
@@ -47,6 +49,12 @@ cd loveworm
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m loveworm.dashboard
+```
+
+El filtro físico al swipear es opcional y usa un modelo local que pesa varios GB. Si lo querés usar, instalalo aparte:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-fisico.txt
 ```
 
 Abrí http://127.0.0.1:5000 y tocá **Iniciar**. Si no estás logueado, iniciá sesión en el Chrome que se abre

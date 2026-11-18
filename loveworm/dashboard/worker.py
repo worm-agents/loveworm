@@ -555,7 +555,10 @@ class Bot:
         self.stop_event.clear()
         self.status = "swipeando"
         filtro = None
-        if self.settings["fisico"].get("activo"):
+        if self.settings["fisico"].get("activo") and not fisico.disponible():
+            self.log("Filtro físico: falta instalar sus dependencias (pip install -r requirements-fisico.txt). "
+                     "Se swipea con el ratio de siempre.")
+        elif self.settings["fisico"].get("activo"):
             filtro = fisico.Filtro(driver=self.session.browser, root=self.root,
                                    opciones=self.settings["fisico"], log=self.log, api=api)
             self.log(f"Filtro físico en modo {filtro.cfg['modo']}: quiero {filtro.cfg['obligatorio'] or '—'}, "

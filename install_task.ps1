@@ -7,7 +7,7 @@ $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -Ru
 $pythonw = Join-Path $PSScriptRoot '.venv\Scripts\pythonw.exe'
 $action = New-ScheduledTaskAction -Execute $pythonw -Argument '-m loveworm.dashboard' -WorkingDirectory $PSScriptRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
-# demora y reintentos: al iniciar sesión el disco D: puede no estar listo todavía
+# demora y reintentos: al iniciar sesión un disco secundario (donde puede estar el proyecto) puede no estar listo todavía
 $trigger.Delay = 'PT1M'
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1)

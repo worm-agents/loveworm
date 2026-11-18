@@ -1,0 +1,2 @@
+# Opcional: solo para el filtro físico al swipear (CLIP local). Instala torch, que pesa varios GB.
+open-clip-torch==2.32.0

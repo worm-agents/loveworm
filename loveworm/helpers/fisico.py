@@ -99,6 +99,12 @@ def descripciones():
     return list(ATRIBUTOS)
 
 
+def disponible():
+    """Si están instaladas las dependencias del filtro (requirements-fisico.txt, varios GB por torch)."""
+    import importlib.util
+    return all(importlib.util.find_spec(m) for m in ("open_clip", "torch"))
+
+
 def _cargar_modelo(nombre, checkpoint):
     """Singleton: cargar los pesos tarda unos segundos y no se puede repetir por tarjeta."""
     global _modelo
